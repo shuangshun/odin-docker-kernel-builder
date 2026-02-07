@@ -18,9 +18,11 @@ DATE_TAG="$(date +%Y%m%d)"
 KSU_TAG=""      # Populated by resolve_ksu_version (e.g. "v3.0.1")
 VARIANT="susfs" # "susfs" (default) or "next" (plain KSU-Next)
 
-# Branch mapping (KernelSU-Next in kernel repo)
-BRANCH_SUSFS="ksu-next-susfs"
-BRANCH_NEXT="ksu-next"
+# Branch mapping: kernel tree (kernel_xiaomi_odin) vs KernelSU-Next subdir
+KERNEL_BRANCH_SUSFS="ksu-next-susfs"
+KERNEL_BRANCH_NEXT="ksu-next"
+KSU_BRANCH_SUSFS="dev_susfs"
+KSU_BRANCH_NEXT="dev"
 
 # KernelSU version alignment — pin the kernel version to the latest
 # release tag so it matches the official Manager APK.
@@ -38,27 +40,42 @@ docker info >/dev/null 2>&1  || die "Docker daemon is not running"
 [ -d "${KERNEL_SRC}" ]       || die "Kernel source not found at ${KERNEL_SRC}"
 [ -f "${DOCKER_BUILDSH}" ]   || die "docker-build.sh not found at ${DOCKER_BUILDSH}"
 
-# ── Switch KernelSU-Next branch based on variant ─────────────────────────
+# ── Switch kernel tree and KernelSU-Next branch based on variant ──────────
 switch_branch() {
     local ksu_dir="${KERNEL_SRC}/KernelSU-Next"
     [ -d "${ksu_dir}" ] || die "KernelSU-Next directory not found"
 
-    local target_branch
+    local kernel_branch ksu_branch
     if [ "${VARIANT}" = "susfs" ]; then
-        target_branch="${BRANCH_SUSFS}"
+        kernel_branch="${KERNEL_BRANCH_SUSFS}"
+        ksu_branch="${KSU_BRANCH_SUSFS}"
     else
-        target_branch="${BRANCH_NEXT}"
+        kernel_branch="${KERNEL_BRANCH_NEXT}"
+        ksu_branch="${KSU_BRANCH_NEXT}"
     fi
 
-    local current_branch
-    current_branch=$(cd "${ksu_dir}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    # 1) Kernel tree (kernel_xiaomi_odin): ksu-next-susfs / ksu-next
+    if [ -d "${KERNEL_SRC}/.git" ]; then
+        local cur
+        cur=$(cd "${KERNEL_SRC}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+        if [ "${cur}" = "${kernel_branch}" ]; then
+            log "Kernel tree already on branch: ${kernel_branch}"
+        else
+            log "Switching kernel tree to branch: ${kernel_branch}"
+            (cd "${KERNEL_SRC}" && git checkout "${kernel_branch}" 2>&1) || \
+                die "Failed to switch kernel tree to ${kernel_branch}"
+        fi
+    fi
 
-    if [ "${current_branch}" = "${target_branch}" ]; then
-        log "Already on branch: ${target_branch}"
+    # 2) KernelSU-Next subdir: dev_susfs / dev
+    local cur_ksu
+    cur_ksu=$(cd "${ksu_dir}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    if [ "${cur_ksu}" = "${ksu_branch}" ]; then
+        log "KernelSU-Next already on branch: ${ksu_branch}"
     else
-        log "Switching KernelSU-Next to branch: ${target_branch}"
-        (cd "${ksu_dir}" && git checkout "${target_branch}" 2>&1) || \
-            die "Failed to switch to branch ${target_branch}"
+        log "Switching KernelSU-Next to branch: ${ksu_branch}"
+        (cd "${ksu_dir}" && git checkout "${ksu_branch}" 2>&1) || \
+            die "Failed to switch to branch ${ksu_branch}"
     fi
 }
 
