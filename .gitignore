@@ -1,0 +1,27 @@
+# Kernel source (users run ./clone-kernel.sh to get it)
+kernel_xiaomi_odin/
+
+# Build outputs
+out/
+logs/
+build/
+
+# AnyKernel build outputs (filled by ./build.sh)
+AnyKernel/Image
+AnyKernel/dtbo.img
+
+# Toolchains / firmware / reference (large or private)
+clang-r574158/
+firmware/
+reference/
+tools/
+
+# OS / macOS
+.DS_Store
+.fseventsd/
+.TemporaryItems/
+.Trashes/
+.DocumentRevisions-V100/
+*.swp
+*.swo
+AnyKernel/test_banner.sh

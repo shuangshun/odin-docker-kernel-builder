@@ -1,0 +1,3 @@
+# Exclude everything — the Dockerfile doesn't COPY anything.
+# The kernel source is mounted at runtime via docker run -v.
+*
