@@ -1,13 +1,10 @@
 #!/bin/bash
-# build.sh — Odin kernel build system.
-# Just run: ./build.sh
+# build.sh — Odin kernel build system (kernel_xiaomi_odin only).
+# Supports two branches: ksu-next-susfs, sukisu-4.1.1
 set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Allow override for standalone use: KERNEL_SRC=/path/to/kernel ./build.sh
-KERNEL_SRC="${KERNEL_SRC:-${SCRIPT_DIR}/kernel_xiaomi_odin}"
-ANYKERNEL_DIR="${ANYKERNEL_DIR:-${SCRIPT_DIR}/AnyKernel}"
 OUT_DIR="${SCRIPT_DIR}/out"
 DOCKER_IMAGE="odin-kernel-builder:arm64"
 DOCKER_VOLUME="odin-kernel-out"
@@ -15,18 +12,18 @@ DOCKER_BUILDSH="${SCRIPT_DIR}/docker-build.sh"
 
 KVER="5.4.302"
 DATE_TAG="$(date +%Y%m%d)"
-KSU_TAG=""      # Populated by resolve_ksu_version (e.g. "v3.0.1")
-VARIANT="susfs" # "susfs" (default) or "next" (plain KSU-Next)
+BUILD_DATE="$(date +%Y-%m-%d)"
+KSU_TAG=""   # Populated by resolve_ksu_version for ksu-next-susfs
 
-# Branch mapping: kernel tree (kernel_xiaomi_odin) vs KernelSU-Next subdir
-KERNEL_BRANCH_SUSFS="ksu-next-susfs"
-KERNEL_BRANCH_NEXT="ksu-next"
-KSU_BRANCH_SUSFS="dev_susfs"
-KSU_BRANCH_NEXT="dev"
+# Single kernel tree
+KERNEL_SRC="${SCRIPT_DIR}/kernel_xiaomi_odin"
+ANYKERNEL_DIR="${ANYKERNEL_DIR:-${SCRIPT_DIR}/AnyKernel}"
 
-# KernelSU version alignment — pin the kernel version to the latest
-# release tag so it matches the official Manager APK.
-# Override: KSU_VERSION_OVERRIDE=2967 ./build.sh
+# Branch choice: ksu-next-susfs | sukisu-4.1.1 (short: susfs | sukisu)
+BRANCH="${BRANCH:-ksu-next-susfs}"
+
+# KernelSU version alignment for ksu-next-susfs (pin to latest release tag).
+# Override: KSU_VERSION_OVERRIDE=2967 ./build.sh ksu-next-susfs
 KSU_VERSION_OVERRIDE="${KSU_VERSION_OVERRIDE:-auto}"
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -34,27 +31,22 @@ log()  { printf '\n\033[1;36m>>> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33mWARN: %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# ── Branch setup ─────────────────────────────────────────────────────────
+setup_branch() {
+    log "Branch: ${BRANCH} (kernel_xiaomi_odin)"
+}
+
 # ── Preflight ────────────────────────────────────────────────────────────
-command -v docker >/dev/null || die "Docker is not installed"
-docker info >/dev/null 2>&1  || die "Docker daemon is not running"
-[ -d "${KERNEL_SRC}" ]       || die "Kernel source not found at ${KERNEL_SRC}"
-[ -f "${DOCKER_BUILDSH}" ]   || die "docker-build.sh not found at ${DOCKER_BUILDSH}"
+run_preflight_checks() {
+    command -v docker >/dev/null || die "Docker is not installed"
+    docker info >/dev/null 2>&1  || die "Docker daemon is not running"
+    [ -d "${KERNEL_SRC}" ]       || die "Kernel source not found at ${KERNEL_SRC}"
+    [ -f "${DOCKER_BUILDSH}" ]   || die "docker-build.sh not found at ${DOCKER_BUILDSH}"
+}
 
-# ── Switch kernel tree and KernelSU-Next branch based on variant ──────────
+# ── Switch kernel tree (and KernelSU-Next for ksu-next-susfs) ────────────
 switch_branch() {
-    local ksu_dir="${KERNEL_SRC}/KernelSU-Next"
-    [ -d "${ksu_dir}" ] || die "KernelSU-Next directory not found"
-
-    local kernel_branch ksu_branch
-    if [ "${VARIANT}" = "susfs" ]; then
-        kernel_branch="${KERNEL_BRANCH_SUSFS}"
-        ksu_branch="${KSU_BRANCH_SUSFS}"
-    else
-        kernel_branch="${KERNEL_BRANCH_NEXT}"
-        ksu_branch="${KSU_BRANCH_NEXT}"
-    fi
-
-    # 1) Kernel tree (kernel_xiaomi_odin): ksu-next-susfs / ksu-next
+    local kernel_branch="${BRANCH}"
     if [ -d "${KERNEL_SRC}/.git" ]; then
         local cur
         cur=$(cd "${KERNEL_SRC}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -67,52 +59,50 @@ switch_branch() {
         fi
     fi
 
-    # 2) KernelSU-Next subdir: dev_susfs / dev
-    local cur_ksu
-    cur_ksu=$(cd "${ksu_dir}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-    if [ "${cur_ksu}" = "${ksu_branch}" ]; then
-        log "KernelSU-Next already on branch: ${ksu_branch}"
-    else
-        log "Switching KernelSU-Next to branch: ${ksu_branch}"
-        (cd "${ksu_dir}" && git checkout "${ksu_branch}" 2>&1) || \
-            die "Failed to switch to branch ${ksu_branch}"
+    # For ksu-next-susfs only: switch KernelSU-Next submodule to dev_susfs
+    if [ "${BRANCH}" = "ksu-next-susfs" ]; then
+        local ksu_dir="${KERNEL_SRC}/KernelSU-Next"
+        if [ -d "${ksu_dir}" ]; then
+            local ksu_branch="dev_susfs"
+            local cur_ksu
+            cur_ksu=$(cd "${ksu_dir}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+            if [ "${cur_ksu}" = "${ksu_branch}" ]; then
+                log "KernelSU-Next already on branch: ${ksu_branch}"
+            else
+                log "Switching KernelSU-Next to branch: ${ksu_branch}"
+                (cd "${ksu_dir}" && git checkout "${ksu_branch}" 2>&1) || \
+                    die "Failed to switch to branch ${ksu_branch}"
+            fi
+        fi
     fi
 }
 
-# ── Resolve KernelSU version to match Manager APK ────────────────────────
+# ── Resolve KernelSU version (ksu-next-susfs only) ────────────────────────
 resolve_ksu_version() {
-    local ksu_dir="${KERNEL_SRC}/KernelSU-Next"
+    [ "${BRANCH}" = "ksu-next-susfs" ] || return 0
 
-    # Resolve tag name (needed for zip naming)
+    local ksu_dir="${KERNEL_SRC}/KernelSU-Next"
     if [ -d "${ksu_dir}/.git" ] || [ -f "${ksu_dir}/.git" ]; then
         KSU_TAG=$(cd "${ksu_dir}" && git describe --tags --abbrev=0 2>/dev/null || echo "")
     fi
 
-    # Disabled — let Kbuild compute version from git normally
     if [ -z "${KSU_VERSION_OVERRIDE}" ]; then
         return 0
     fi
 
-    # Manual numeric override
     if [ "${KSU_VERSION_OVERRIDE}" != "auto" ]; then
         export KSU_GIT_VERSION="${KSU_VERSION_OVERRIDE}"
-        log "KSU version pinned (manual): ${KSU_GIT_VERSION} → version $(( 30000 + KSU_GIT_VERSION ))"
+        log "KSU version pinned (manual): ${KSU_GIT_VERSION}"
         return 0
     fi
 
-    # Auto-resolve from latest release tag
     if [ -n "${KSU_TAG}" ]; then
         local head_count tag_count
         head_count=$(cd "${ksu_dir}" && git rev-list --count HEAD 2>/dev/null || echo "0")
         tag_count=$(cd "${ksu_dir}"  && git rev-list --count "${KSU_TAG}" 2>/dev/null || echo "0")
-
         if [ "${head_count}" != "${tag_count}" ]; then
             export KSU_GIT_VERSION="${tag_count}"
             log "KSU version auto-aligned to release tag ${KSU_TAG}"
-            log "  Branch HEAD: ${head_count} commits  →  pinned to tag: ${tag_count} commits"
-            log "  Kernel will report version $(( 30000 + KSU_GIT_VERSION )) (matches official Manager APK)"
-        else
-            log "KSU version already matches latest tag ${KSU_TAG} (${head_count} commits)"
         fi
     else
         warn "No release tags found in KernelSU-Next — skipping version alignment"
@@ -170,21 +160,19 @@ ensure_volume() {
 
 run_docker() {
     local action="${1:-build}"
-    log "Running: docker-build.sh ${action}"
-
     local ksu_env=""
     if [ -n "${KSU_GIT_VERSION:-}" ]; then
         ksu_env="-e KSU_GIT_VERSION=${KSU_GIT_VERSION}"
     fi
-
+    local defconfig_env=""
+    [ -n "${DEFCONFIG:-}" ] && defconfig_env="-e DEFCONFIG=${DEFCONFIG}"
     local tty_flag=""
-    if [ "${action}" = "menuconfig" ]; then
-        tty_flag="-it"
-    fi
+    [ "${action}" = "menuconfig" ] && tty_flag="-it"
 
+    log "Running: docker-build.sh ${action}"
     docker run --rm ${tty_flag} \
         --platform linux/arm64 \
-        ${ksu_env} \
+        ${ksu_env} ${defconfig_env} \
         -v "${KERNEL_SRC}:/src:ro" \
         -v "${DOCKER_VOLUME}:/out" \
         -v "${DOCKER_BUILDSH}:/docker-build.sh:ro" \
@@ -225,23 +213,38 @@ extract_artifacts() {
     docker rm "${tmp_container}" >/dev/null 2>&1
 }
 
-# ── Package flashable zip ────────────────────────────────────────────────
+# ── Package flashable zip (with dynamic AnyKernel banner) ─────────────────
 package_zip() {
     [ -f "${ANYKERNEL_DIR}/Image" ] || die "No Image found in AnyKernel3/"
 
-    # susfs → Odin_5.4.302_KSU_NXT_SUSFS_v3.0.1_20260207.zip
-    # next  → Odin_5.4.302_KSU_NXT_v3.0.1_20260207.zip
-    local tag_part=""
-    if [ -n "${KSU_TAG}" ]; then
-        tag_part="_${KSU_TAG}"
+    local zip_name build_label
+    if [ "${BRANCH}" = "ksu-next-susfs" ]; then
+        local tag_part=""
+        [ -n "${KSU_TAG}" ] && tag_part="_${KSU_TAG}"
+        zip_name="Odin_${KVER}_KSU_NXT_SUSFS${tag_part}_${DATE_TAG}.zip"
+        build_label="KSU-Next SUSFS"
+    else
+        zip_name="Odin_${KVER}_SukiSU_4.1.1_${DATE_TAG}.zip"
+        build_label="SukiSU 4.1.1"
     fi
-    local variant_part=""
-    if [ "${VARIANT}" = "susfs" ]; then
-        variant_part="_SUSFS"
-    fi
-    local zip_name="Odin_${KVER}_KSU_NXT${variant_part}${tag_part}_${DATE_TAG}.zip"
+
     mkdir -p "${OUT_DIR}"
     local zip_path="${OUT_DIR}/${zip_name}"
+    local ak_script="${ANYKERNEL_DIR}/anykernel.sh"
+
+    # Substitute placeholders so the packed zip shows this build's version
+    [ -f "${ak_script}" ] || die "AnyKernel script not found: ${ak_script}"
+    local tmp_ak
+    tmp_ak=$(mktemp -t anykernel.XXXXXX)
+    cp "${ak_script}" "${tmp_ak}"
+    sed \
+        -e "s/__KERNEL_VERSION__/${KVER}/g" \
+        -e "s/__BUILD_LABEL__/${build_label}/g" \
+        -e "s/__BUILD_DATE__/${BUILD_DATE}/g" \
+        -e "s/__COMPILER__/Ubuntu clang 14.0.6/g" \
+        "${ak_script}" > "${tmp_ak}.sub"
+    cp "${tmp_ak}.sub" "${ak_script}"
+    rm -f "${tmp_ak}.sub"
 
     log "Packaging: ${zip_name}"
     (
@@ -253,6 +256,10 @@ package_zip() {
             -x '*.zip' \
             -x '.DS_Store'
     )
+
+    # Restore placeholders so repo stays generic for next build
+    mv "${tmp_ak}" "${ak_script}"
+    rm -f "${tmp_ak}"
 
     local zip_size
     zip_size=$(du -h "${zip_path}" | cut -f1)
@@ -274,12 +281,25 @@ do_nuke() {
     log "Nuke complete — run './build.sh' to rebuild from scratch"
 }
 
-# ── Full build pipeline (default) ────────────────────────────────────────
+# ── Full build pipeline ──────────────────────────────────────────────────
 do_build() {
-    log "Building variant: ${VARIANT}"
+    setup_branch
+    run_preflight_checks
+    log "Building branch: ${BRANCH}"
+
     build_docker_image
     switch_branch
     resolve_ksu_version
+
+    # Optionally detect KVER from kernel Makefile
+    if [ -f "${KERNEL_SRC}/Makefile" ]; then
+        local v p s
+        v=$(grep -m1 '^VERSION' "${KERNEL_SRC}/Makefile" | awk '{print $3}')
+        p=$(grep -m1 '^PATCHLEVEL' "${KERNEL_SRC}/Makefile" | awk '{print $3}')
+        s=$(grep -m1 '^SUBLEVEL' "${KERNEL_SRC}/Makefile" | awk '{print $3}')
+        [ -n "${v}" ] && [ -n "${p}" ] && KVER="${v}.${p}.${s:-0}"
+    fi
+
     ensure_clean_source
     ensure_volume
     run_docker build
@@ -290,47 +310,80 @@ do_build() {
 # ── Usage ────────────────────────────────────────────────────────────────
 usage() {
     cat <<'EOF'
-Odin Kernel Build System
-========================
+Odin Kernel Build System (kernel_xiaomi_odin)
+============================================
 
-Usage: ./build.sh [variant] [command]
+Usage: ./build.sh [branch] [command]
 
-Variants:
-  susfs       KSU-Next + SUSFS  (default)
-  next        KSU-Next only (no SUSFS)
+Branches:
+  ksu-next-susfs   KSU-Next + SUSFS (default)
+  sukisu-4.1.1     SukiSU 4.1.1
+  susfs            Short for ksu-next-susfs
+  sukisu           Short for sukisu-4.1.1
 
 Commands:
-  build       Full build (default if omitted)
-  rebuild     Clean + full rebuild from scratch
-  clean       Remove build output volume (keeps Docker image)
-  nuke        Remove everything (Docker image + volume)
-  help        Show this help
+  build            Full build (default if omitted)
+  rebuild          Clean + full rebuild from scratch
+  clean            Remove build output volume (keeps Docker image)
+  nuke             Remove everything (Docker image + volume)
+  help             Show this help
 
 Examples:
-  ./build.sh              # Build KSU-Next+SUSFS → out/Odin_5.4.302_KSU_NXT_SUSFS_v3.0.1_<date>.zip
-  ./build.sh next         # Build KSU-Next only  → out/Odin_5.4.302_KSU_NXT_v3.0.1_<date>.zip
-  ./build.sh susfs        # Same as no args
-  ./build.sh rebuild      # Clean rebuild (SUSFS)
-  ./build.sh next rebuild # Clean rebuild (KSU-Next only)
+  ./build.sh                        # ksu-next-susfs build
+  ./build.sh sukisu-4.1.1            # SukiSU 4.1.1 build
+  ./build.sh susfs rebuild           # Clean rebuild KSU-Next SUSFS
+  ./build.sh sukisu build            # Explicit SukiSU 4.1.1 build
+
+Zip names:
+  ksu-next-susfs → out/Odin_5.4.302_KSU_NXT_SUSFS_<tag>_<date>.zip
+  sukisu-4.1.1   → out/Odin_5.4.302_SukiSU_4.1.1_<date>.zip
+
+The packed zip recovery banner shows the built kernel version and build label.
 
 Output:  out/
 EOF
 }
 
-# ── Main — parse [variant] [command] ─────────────────────────────────────
-# First arg can be a variant (susfs/next) or a command. If it's a variant,
-# the second arg is the command. If neither is given, defaults to susfs + build.
+# ── Main — parse [branch] [command] ──────────────────────────────────────
 ARG1="${1:-}"
 ARG2="${2:-}"
 
-# Detect if first arg is a variant
-case "${ARG1}" in
-    susfs)  VARIANT="susfs"; ACTION="${ARG2:-build}" ;;
-    next)   VARIANT="next";  ACTION="${ARG2:-build}" ;;
-    "")     VARIANT="susfs"; ACTION="build" ;;
-    *)      VARIANT="susfs"; ACTION="${ARG1}" ;;
-esac
+is_command() {
+    case "$1" in
+        build|rebuild|clean|nuke|help|--help|-h) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
+normalize_branch() {
+    case "$1" in
+        ksu-next-susfs|susfs) echo "ksu-next-susfs" ;;
+        sukisu-4.1.1|sukisu)  echo "sukisu-4.1.1" ;;
+        *) echo "" ;;
+    esac
+}
+
+if [ -z "${ARG1}" ]; then
+    BRANCH="ksu-next-susfs"
+    ACTION="build"
+elif is_command "${ARG1}"; then
+    BRANCH="ksu-next-susfs"
+    ACTION="${ARG1}"
+else
+    BRANCH=$(normalize_branch "${ARG1}")
+    if [ -z "${BRANCH}" ]; then
+        die "Unknown branch: ${ARG1} (use ksu-next-susfs, sukisu-4.1.1, susfs, or sukisu)"
+    fi
+    if [ -z "${ARG2}" ]; then
+        ACTION="build"
+    elif is_command "${ARG2}"; then
+        ACTION="${ARG2}"
+    else
+        die "Unknown argument: ${ARG2} (expected command: build, rebuild, clean, nuke, help)"
+    fi
+fi
+
+# Execute action
 case "${ACTION}" in
     build)
         do_build

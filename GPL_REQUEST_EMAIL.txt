@@ -1,0 +1,60 @@
+To: oss@xiaomi.com
+Subject: GPL v2 Compliance Request - Kernel Source for Mi Mix 4 5.4.259
+
+Dear Xiaomi Open Source Team,
+
+I am formally requesting the complete kernel source code for the Xiaomi Mi Mix 4 under the GNU General Public License version 2.
+
+DEVICE INFORMATION:
+- Model: Xiaomi Mi Mix 4 (2107113SG)
+- Codename: odin
+- Platform: Qualcomm SM8350 (Snapdragon 888)
+- Kernel Version: 5.4.259-qgki-g8cc268997371
+- Build Date: December 8, 2025
+- Current Firmware: HyperOS OS1.0.8.0.UKACNXM
+
+CURRENT AVAILABILITY:
+The MiCode/Xiaomi_Kernel_OpenSource repository (https://github.com/MiCode/Xiaomi_Kernel_OpenSource) currently only provides:
+- Branch: odin-r-oss
+- Kernel Version: 5.4.86
+- Last Updated: August 10, 2021
+
+This kernel source is 173 minor versions behind the shipping kernel (5.4.86 vs 5.4.259), representing over 4 years of development that has not been made publicly available.
+
+GPL v2 COMPLIANCE REQUEST:
+Under Section 3 of the GNU General Public License version 2, I formally request the following:
+
+1. Complete source code for Linux kernel version 5.4.259-qgki-g8cc268997371 as currently shipping on Mi Mix 4 devices
+2. All Xiaomi-specific patches, modifications, and drivers
+3. Complete build scripts, configurations, and makefiles
+4. Device tree source (DTS/DTSI) files for the odin platform
+5. Detailed build instructions sufficient to reproduce the exact shipping kernel binary
+
+REQUESTED FORMAT:
+Please provide the source code in one of the following formats:
+- Git repository with appropriate branch/tag (preferred method)
+- Complete source code tarball with comprehensive build documentation
+
+LEGAL OBLIGATION:
+The Linux kernel is licensed under GPL v2, which requires that anyone distributing the software must make the complete corresponding source code available. As Xiaomi distributes this kernel with every Mi Mix 4 device sold, you are legally obligated to provide this source code.
+
+TIMELINE:
+I respectfully request:
+- Acknowledgment of this request within 14 days
+- Complete source code availability within 60 days
+
+I appreciate your cooperation with open source licensing obligations and look forward to your response.
+
+Thank you for your attention to this matter.
+
+Sincerely,
+[Your Name]
+[Your Email]
+[Date]
+
+---
+Technical Details for Reference:
+- Kernel extracted from: HyperOS OS1.0.8.0.UKACNXM
+- Verified via: adb shell uname -r
+- Compiler: Android (6877366 based on r383902b1) clang version 11.0.2
+- Build timestamp: Mon Dec 8 17:59:01 UTC 2025

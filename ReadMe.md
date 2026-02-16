@@ -38,24 +38,25 @@ What you ship in the GitHub repo:
 2. **Get kernel source** (one of):
    - `./clone-kernel.sh` → clones [NOXCIS/kernel_xiaomi_odin](https://github.com/NOXCIS/kernel_xiaomi_odin) into `./kernel_xiaomi_odin`
    - Or: `./clone-kernel.sh <other-repo-url>` / `KERNEL_SRC=/path/to/kernel ./build.sh`
-3. **Build:** `./build.sh` or `./build.sh next` (see variants below). First build will put `Image` (and `dtbo.img` if present) into `AnyKernel/`.
+3. **Build:** `./build.sh` or `./build.sh sukisu-4.1.1` (see branches below). First build will put `Image` (and `dtbo.img` if present) into `AnyKernel/`.
 
-### Build variants (branches)
+### Build branches
 
-| Invocation        | Variant | KernelSU-Next branch | Zip name pattern                    |
-|-------------------|--------|----------------------|-------------------------------------|
-| `./build.sh`      | susfs  | `ksu-next-susfs`     | `Odin_5.4.302_KSU_NXT_SUSFS_<tag>_<date>.zip` |
-| `./build.sh susfs`| susfs  | `ksu-next-susfs`     | same                                |
-| `./build.sh next` | next   | `ksu-next`           | `Odin_5.4.302_KSU_NXT_<tag>_<date>.zip`      |
+| Invocation            | Branch         | Zip name pattern                    |
+|-----------------------|----------------|-------------------------------------|
+| `./build.sh`          | ksu-next-susfs | `Odin_5.4.302_KSU_NXT_SUSFS_<tag>_<date>.zip` |
+| `./build.sh susfs`    | ksu-next-susfs | same                                |
+| `./build.sh sukisu-4.1.1` | sukisu-4.1.1 | `Odin_5.4.302_SukiSU_4.1.1_<date>.zip` |
+| `./build.sh sukisu`   | sukisu-4.1.1   | same                                |
 
-`build.sh` switches `kernel_xiaomi_odin/KernelSU-Next` to the correct branch before building. Only these two branches are used.
+`build.sh` switches `kernel_xiaomi_odin` to the chosen branch (and for `ksu-next-susfs`, KernelSU-Next to `dev_susfs`) before building. The packed zip’s recovery banner shows the built kernel version and build label.
 
 ### What happens when you run `./build.sh`
 
 1. **Preflight:** Docker present and running; `KERNEL_SRC` (default `./kernel_xiaomi_odin`) exists; `docker-build.sh` exists.
 2. **Image:** Build Docker image `odin-kernel-builder:arm64` once (cached).
-3. **Branch:** In `KERNEL_SRC/KernelSU-Next`, checkout `ksu-next-susfs` or `ksu-next` per variant.
-4. **KSU version:** Resolve tag for zip name (e.g. `v3.0.1`); optional `KSU_GIT_VERSION` alignment.
+3. **Branch:** Checkout `kernel_xiaomi_odin` to the chosen branch; for `ksu-next-susfs`, also checkout KernelSU-Next to `dev_susfs`.
+4. **KSU version:** For `ksu-next-susfs` only, resolve tag for zip name (e.g. `v3.0.1`); optional `KSU_GIT_VERSION` alignment.
 5. **Clean:** Remove leftover build artifacts from kernel source tree (no `make clean` in-tree).
 6. **Volume:** Ensure Docker volume `odin-kernel-out` exists.
 7. **Docker run:**  

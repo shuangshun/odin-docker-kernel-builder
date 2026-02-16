@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>devpts fix #796 — Mermaid charts</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 1rem; background: #1a1a1a; color: #e0e0e0; }
+    h1 { font-size: 1.25rem; margin-top: 2rem; }
+    h1:first-of-type { margin-top: 0; }
+    .mermaid { background: #252525; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    .mermaid svg { max-width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>1. Scenario: why only after reboot?</h1>
+  <div class="mermaid">
+flowchart LR
+  subgraph AfterReboot["🔴 After reboot (bug)"]
+    direction TB
+    AR1[Allowlist persisted]
+    AR2[User opens terminal app]
+    AR3[App cold start, already allowlisted]
+    AR4[App opens pty for first session]
+    AR5[Process = untrusted_app]
+    AR6[ksu_handle_devpts: UID allowlisted ✓]
+    AR7[Relabel pty → ksu_file]
+    AR8[App does ioctl on pty]
+    AR9[SELinux: untrusted_app → ksu_file = DENY]
+    AR10[Crash / lockout]
+    AR1 --> AR2 --> AR3 --> AR4 --> AR5 --> AR6 --> AR7 --> AR8 --> AR9 --> AR10
+  end
+
+  subgraph BeforeReboot["🟢 Before reboot (no bug)"]
+    direction TB
+    BR1[App already running]
+    BR2[Ptys opened before allowlisted]
+    BR3[User grants root]
+    BR4[Existing ptys never relabeled]
+    BR5[OR: user runs su]
+    BR6[First pty touch = su domain]
+    BR7[Relabel allowed, ioctl OK]
+    BR1 --> BR2 --> BR3 --> BR4
+    BR3 --> BR5 --> BR6 --> BR7
+  end
+  </div>
+
+  <h1>2a. Old (without fix): ksu_handle_devpts() decision flow</h1>
+  <div class="mermaid">
+flowchart TB
+  Start([Process touches devpts inode]) --> H([ksu_handle_devpts])
+
+  H --> A{current->mm?}
+  A -->|no| R0[return 0]
+  A -->|yes| B{uid in untrusted_app\nrange?}
+  B -->|no| R0
+  B -->|yes| C{__ksu_is_allow_uid\n_for_current?}
+  C -->|no| R0
+  C -->|yes| RELABEL
+
+  subgraph Relabel["Relabel path (every allowlisted UID)"]
+    RELABEL[sec->sid = ksu_file_sid]
+    RELABEL --> R1[return 0]
+  end
+
+  R0 --> NO[No relabel\npty keeps normal label]
+  R1 --> YES[Pty = ksu_file]
+
+  NO --> OUT1[untrusted_app ioctl → OK]
+  YES --> OUT2[su domain ioctl → OK 🟢]
+  YES --> OUT3[untrusted_app ioctl → DENY 🔴]
+
+  style RELABEL fill:#fcc
+  style OUT3 fill:#fcc
+  </div>
+
+  <h1>2b. With fix: ksu_handle_devpts() decision flow</h1>
+  <div class="mermaid">
+flowchart TB
+  Start([Process touches devpts inode]) --> H([ksu_handle_devpts])
+
+  H --> A{current->mm?}
+  A -->|no| R0[return 0]
+  A -->|yes| B{uid in untrusted_app\nrange?}
+  B -->|no| R0
+  B -->|yes| C{__ksu_is_allow_uid\n_for_current?}
+  C -->|no| R0
+  C -->|yes| EXTRA
+
+  subgraph ExtraGate["🟢 FIX: extra gate"]
+    EXTRA{is_ksu_domain?}
+    EXTRA -->|no\nuntrusted_app| R0
+    EXTRA -->|yes\nroot shell| RELABEL
+  end
+
+  subgraph Relabel["Relabel path"]
+    RELABEL[sec->sid = ksu_file_sid]
+    RELABEL --> R1[return 0]
+  end
+
+  R0 --> NO[No relabel\npty keeps normal label]
+  R1 --> YES[Pty = ksu_file]
+
+  NO --> OUT1[untrusted_app ioctl → OK]
+  YES --> OUT2[su domain ioctl → OK]
+  YES --> OUT3[untrusted_app ioctl → DENY 🔴]
+
+  style EXTRA fill:#cfc
+  style OUT3 fill:#fcc
+  </div>
+
+  <h1>3. Summary: who gets pty relabeled?</h1>
+  <div class="mermaid">
+flowchart TB
+  subgraph Touch["Process touches pty"]
+    T[Any process]
+  end
+
+  subgraph Without["Without fix"]
+    W1{Allowlisted UID?}
+    W1 -->|yes| W2[Relabel to ksu_file]
+    W1 -->|no| W3[Keep normal label]
+    W2 --> W4[untrusted_app → ioctl DENY 🔴]
+    W2 --> W5[su domain → ioctl OK 🟢]
+  end
+
+  subgraph With["With fix"]
+    F1{Allowlisted UID?}
+    F1 -->|no| F3[Keep normal label]
+    F1 -->|yes| F2{is_ksu_domain?}
+    F2 -->|no| F3
+    F2 -->|yes| F4[Relabel to ksu_file]
+    F4 --> F5[su domain only → ioctl OK 🟢]
+    F3 --> F6[untrusted_app → normal label → ioctl OK 🟢]
+  end
+
+  T --> Without
+  T --> With
+  </div>
+
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', securityLevel: 'loose' });
+  </script>
+</body>
+</html>

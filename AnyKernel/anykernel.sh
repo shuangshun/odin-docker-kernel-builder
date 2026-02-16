@@ -4,7 +4,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=___  __________   __    ___ \n|  \/  |_   _\ \ / /   /   |\n| .  . | | |  \ V /   / /| |\n| |\/| | | |  /   \  / /_| |\n| |  | |_| |_/ /^\ \ \___  |\n\_|  |_/\___/\/   \/     |_/\n                            \n▗▖ ▗▖▗▄▄▄▖▗▄▄▖ ▗▖  ▗▖▗▄▄▄▖▗▖   \n▐▌▗▞▘▐▌   ▐▌ ▐▌▐▛▚▖▐▌▐▌   ▐▌   \n▐▛▚▖ ▐▛▀▀▘▐▛▀▚▖▐▌ ▝▜▌▐▛▀▀▘▐▌   \n▐▌ ▐▌▐▙▄▄▖▐▌ ▐▌▐▌  ▐▌▐▙▄▄▖▐▙▄▄▖\n\nCODENAME:ODIN \nKSU_NEXT SUSFS By NOXCIS @ Github/Gitlab\nKernel Version: 5.4.302
+kernel.string=___  __________   __           ___ \n|  \/  |_   _\ \ / /          /   |\n| .  . | | |  \ V /          / /| |\n| |\/| | | |  /   \         / /_| |\n| |  | |_| |_/ /^\ \        \___  |\n\_|  |_/\___/\/   \/            |_/\n                            \n _____ _____ _____ _____ _____ __    \n|  |  |   __| __  |   | |   __|  |   \n|    -|   __|    -| | | |   __|  |__ \n|__|__|_____|__|__|_|___|_____|_____|\n\nCODENAME:ODIN \n__BUILD_LABEL__\nKernel Version: __KERNEL_VERSION__\nBuild: __BUILD_LABEL__\nBuild Date: __BUILD_DATE__\nCompiler: __COMPILER__\nBuilder: Noxcis @ Github/Gitlab 
 do.devicecheck=1
 do.modules=0
 do.systemless=1

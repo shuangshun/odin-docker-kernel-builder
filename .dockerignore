@@ -1,3 +1,15 @@
-# Exclude everything — the Dockerfile doesn't COPY anything.
-# The kernel source is mounted at runtime via docker run -v.
-*
+.DocumentRevisions-V100
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.fseventsd
+.DS_Store
+HYPER_OS/
+docs/
+scripts/
+*.apk
+*.tar.gz
+*.log
+*.png
+*.json
+*.md
