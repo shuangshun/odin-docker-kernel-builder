@@ -10,6 +10,11 @@ DOCKER_IMAGE="odin-kernel-builder:arm64"
 DOCKER_VOLUME="odin-kernel-out"
 DOCKER_BUILDSH="${SCRIPT_DIR}/docker-build.sh"
 
+# ccache lives on the host repo root so it survives across runs and can be
+# picked up by actions/cache. It is mounted into the container at /ccache
+# (separate from the read-only /src bind mount).
+CCACHE_HOST_DIR="${CCACHE_HOST_DIR:-${SCRIPT_DIR}/.ccache}"
+
 KVER="5.4.302"
 DATE_TAG="$(date +%Y%m%d)"
 BUILD_DATE="$(date +%Y-%m-%d)"
@@ -119,24 +124,15 @@ ensure_clean_source() {
 
     if [ "${dirty}" -eq 1 ]; then
         log "Cleaning leftover build artifacts from source tree"
-        rm -f  "${KERNEL_SRC}/.config" "${KERNEL_SRC}/.config.old"
-        rm -rf "${KERNEL_SRC}/include/config"
-        rm -rf "${KERNEL_SRC}/include/generated"
-        rm -rf "${KERNEL_SRC}/arch/arm64/include/generated"
-        rm -f  "${KERNEL_SRC}/.version"
-        rm -f  "${KERNEL_SRC}/Module.symvers"
-        rm -f  "${KERNEL_SRC}/System.map"
-        rm -f  "${KERNEL_SRC}/vmlinux"
-        rm -f  "${KERNEL_SRC}/vmlinux.o"
-        find "${KERNEL_SRC}" -name '*.o' -o -name '.*.cmd' -o -name '*.ko' \
-            -o -name '*.mod' -o -name '*.mod.c' 2>/dev/null | head -5 | while read -r f; do
-            log "Found stale object files — running cleanup"
-            find "${KERNEL_SRC}" \( -name '*.o' -o -name '.*.cmd' -o -name '*.ko' \
-                -o -name '*.mod' -o -name '*.mod.c' -o -name '.*.d' \
-                -o -name '*.order' -o -name 'modules.builtin' \
-                -o -name '.tmp_*' \) -delete 2>/dev/null || true
-            break
-        done
+        rm -f  "${KERNEL_SRC}/.config" "${KERNEL_SRC}/.config.old" || true
+        rm -rf "${KERNEL_SRC}/include/config" || true
+        rm -rf "${KERNEL_SRC}/include/generated" || true
+        rm -rf "${KERNEL_SRC}/arch/arm64/include/generated" || true
+        rm -f  "${KERNEL_SRC}/.version" || true
+        rm -f  "${KERNEL_SRC}/Module.symvers" || true
+        rm -f  "${KERNEL_SRC}/System.map" || true
+        rm -f  "${KERNEL_SRC}/vmlinux" || true
+        rm -f  "${KERNEL_SRC}/vmlinux.o" || true
         log "Source tree cleaned"
     fi
 }
@@ -148,13 +144,22 @@ build_docker_image() {
         return 0
     fi
     log "Building Docker image: ${DOCKER_IMAGE}"
-    docker build --platform linux/arm64 -t "${DOCKER_IMAGE}" - < "${SCRIPT_DIR}/Dockerfile"
+    # Native ARM64 runner: no --platform needed. If you must stay on x86
+    # with QEMU, restore: docker build --platform linux/arm64 ...
+    docker build -t "${DOCKER_IMAGE}" - < "${SCRIPT_DIR}/Dockerfile"
 }
 
 ensure_volume() {
     if ! docker volume inspect "${DOCKER_VOLUME}" >/dev/null 2>&1; then
         log "Creating Docker volume: ${DOCKER_VOLUME}"
         docker volume create "${DOCKER_VOLUME}"
+    fi
+}
+
+ensure_ccache_dir() {
+    if [ ! -d "${CCACHE_HOST_DIR}" ]; then
+        log "Creating host ccache dir: ${CCACHE_HOST_DIR}"
+        mkdir -p "${CCACHE_HOST_DIR}"
     fi
 }
 
@@ -169,12 +174,22 @@ run_docker() {
     local tty_flag=""
     [ "${action}" = "menuconfig" ] && tty_flag="-it"
 
+    # ccache: mount host .ccache as /ccache and pass config into container
+    local ccache_env="-e CCACHE_DIR=/ccache"
+    [ -n "${CCACHE_MAXSIZE:-}" ]         && ccache_env="${ccache_env} -e CCACHE_MAXSIZE=${CCACHE_MAXSIZE}"
+    [ -n "${CCACHE_BASEDIR:-}" ]         && ccache_env="${ccache_env} -e CCACHE_BASEDIR=${CCACHE_BASEDIR}"
+    [ -n "${CCACHE_COMPILERCHECK:-}" ]   && ccache_env="${ccache_env} -e CCACHE_COMPILERCHECK=${CCACHE_COMPILERCHECK}"
+    [ -n "${CCACHE_NOHASHDIR:-}" ]       && ccache_env="${ccache_env} -e CCACHE_NOHASHDIR=${CCACHE_NOHASHDIR}"
+    [ -n "${CCACHE_HARDLINK:-}" ]        && ccache_env="${ccache_env} -e CCACHE_HARDLINK=${CCACHE_HARDLINK}"
+
     log "Running: docker-build.sh ${action}"
+    # NOTE: do NOT pass --platform on native ARM runners. If you are forced
+    # to use x86 + QEMU, add --platform linux/arm64 back here.
     docker run --rm ${tty_flag} \
-        --platform linux/arm64 \
-        ${ksu_env} ${defconfig_env} \
+        ${ksu_env} ${defconfig_env} ${ccache_env} \
         -v "${KERNEL_SRC}:/src:ro" \
         -v "${DOCKER_VOLUME}:/out" \
+        -v "${CCACHE_HOST_DIR}:/ccache" \
         -v "${DOCKER_BUILDSH}:/docker-build.sh:ro" \
         --entrypoint /bin/bash \
         "${DOCKER_IMAGE}" \
@@ -186,7 +201,7 @@ extract_artifacts() {
     log "Extracting build artifacts from Docker volume"
 
     local tmp_container
-    tmp_container=$(docker create --platform linux/arm64 -v "${DOCKER_VOLUME}:/out" "${DOCKER_IMAGE}" /bin/true)
+    tmp_container=$(docker create -v "${DOCKER_VOLUME}:/out" "${DOCKER_IMAGE}" /bin/true)
 
     if docker cp "${tmp_container}:/out/arch/arm64/boot/Image" "${ANYKERNEL_DIR}/Image" 2>/dev/null; then
         local size
@@ -203,7 +218,7 @@ extract_artifacts() {
         warn "dtbo.img not found in build output (may need separate DTBO build)"
         local dtbo_dir="/out/arch/arm64/boot/dts/vendor/qcom"
         local dtbo_count
-        dtbo_count=$(docker run --rm --platform linux/arm64 -v "${DOCKER_VOLUME}:/out" --entrypoint /bin/bash \
+        dtbo_count=$(docker run --rm -v "${DOCKER_VOLUME}:/out" --entrypoint /bin/bash \
             "${DOCKER_IMAGE}" -c "find ${dtbo_dir} -name '*.dtbo' 2>/dev/null | wc -l" 2>/dev/null || echo "0")
         if [ "${dtbo_count}" -gt 0 ]; then
             log "Found ${dtbo_count} .dtbo files — you may need to create dtbo.img with mkdtboimg"
@@ -232,7 +247,6 @@ package_zip() {
     local zip_path="${OUT_DIR}/${zip_name}"
     local ak_script="${ANYKERNEL_DIR}/anykernel.sh"
 
-    # Substitute placeholders so the packed zip shows this build's version
     [ -f "${ak_script}" ] || die "AnyKernel script not found: ${ak_script}"
     local tmp_ak
     tmp_ak=$(mktemp -t anykernel.XXXXXX)
@@ -257,7 +271,6 @@ package_zip() {
             -x '.DS_Store'
     )
 
-    # Restore placeholders so repo stays generic for next build
     mv "${tmp_ak}" "${ak_script}"
     rm -f "${tmp_ak}"
 
@@ -271,7 +284,13 @@ package_zip() {
 do_clean() {
     log "Removing Docker volume: ${DOCKER_VOLUME}"
     docker volume rm "${DOCKER_VOLUME}" 2>/dev/null || true
-    log "Clean complete"
+    log "Clean complete (ccache preserved at ${CCACHE_HOST_DIR})"
+}
+
+do_clean_ccache() {
+    log "Removing ccache: ${CCACHE_HOST_DIR}"
+    rm -rf "${CCACHE_HOST_DIR}" || true
+    log "ccache cleared"
 }
 
 do_nuke() {
@@ -291,7 +310,6 @@ do_build() {
     switch_branch
     resolve_ksu_version
 
-    # Optionally detect KVER from kernel Makefile
     if [ -f "${KERNEL_SRC}/Makefile" ]; then
         local v p s
         v=$(grep -m1 '^VERSION' "${KERNEL_SRC}/Makefile" | awk '{print $3}')
@@ -302,6 +320,7 @@ do_build() {
 
     ensure_clean_source
     ensure_volume
+    ensure_ccache_dir
     run_docker build
     extract_artifacts
     package_zip
@@ -324,21 +343,24 @@ Branches:
 Commands:
   build            Full build (default if omitted)
   rebuild          Clean + full rebuild from scratch
-  clean            Remove build output volume (keeps Docker image)
+  clean            Remove build output volume (keeps Docker image + ccache)
+  cleancache       Remove the ccache directory only
   nuke             Remove everything (Docker image + volume)
   help             Show this help
+
+Environment (optional):
+  CCACHE_HOST_DIR   Host ccache dir (default: <repo>/.ccache)
+  CCACHE_MAXSIZE    ccache max size (default set by workflow/container)
 
 Examples:
   ./build.sh                        # ksu-next-susfs build
   ./build.sh sukisu-4.1.1            # SukiSU 4.1.1 build
   ./build.sh susfs rebuild           # Clean rebuild KSU-Next SUSFS
-  ./build.sh sukisu build            # Explicit SukiSU 4.1.1 build
+  ./build.sh cleancache              # Drop ccache if it gets corrupted
 
 Zip names:
   ksu-next-susfs → out/Odin_5.4.302_KSU_NXT_SUSFS_<tag>_<date>.zip
   sukisu-4.1.1   → out/Odin_5.4.302_SukiSU_4.1.1_<date>.zip
-
-The packed zip recovery banner shows the built kernel version and build label.
 
 Output:  out/
 EOF
@@ -350,7 +372,7 @@ ARG2="${2:-}"
 
 is_command() {
     case "$1" in
-        build|rebuild|clean|nuke|help|--help|-h) return 0 ;;
+        build|rebuild|clean|cleancache|nuke|help|--help|-h) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -379,33 +401,18 @@ else
     elif is_command "${ARG2}"; then
         ACTION="${ARG2}"
     else
-        die "Unknown argument: ${ARG2} (expected command: build, rebuild, clean, nuke, help)"
+        die "Unknown argument: ${ARG2} (expected command: build, rebuild, clean, cleancache, nuke, help)"
     fi
 fi
 
-# Execute action
 case "${ACTION}" in
-    build)
-        do_build
-        ;;
-    rebuild)
-        do_clean
-        do_build
-        ;;
-    clean)
-        do_clean
-        ;;
-    nuke)
-        do_nuke
-        ;;
-    help|--help|-h)
-        usage
-        ;;
-    *)
-        warn "Unknown command: ${ACTION}"
-        usage
-        exit 1
-        ;;
+    build)      do_build ;;
+    rebuild)    do_clean; do_build ;;
+    clean)      do_clean ;;
+    cleancache) do_clean_ccache ;;
+    nuke)       do_nuke ;;
+    help|--help|-h) usage ;;
+    *) warn "Unknown command: ${ACTION}"; usage; exit 1 ;;
 esac
 
 log "Done."
