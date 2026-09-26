@@ -1,0 +1,88 @@
+name: Build Odin Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      root_manager:
+        required: false
+        default: 'sukisu-4.1.1'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+
+    env:
+      DOCKER_BUILDKIT: 1
+      CCACHE_HOST_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 5G
+      CCACHE_BASEDIR: /src
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+
+      - name: Free up disk space on runner
+        run: |
+          set -x
+          df -h
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY" || true
+          sudo apt-get clean
+          df -h
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Make build scripts executable
+        run: |
+          chmod +x build.sh clone-kernel.sh
+
+      - name: Clone kernel source
+        run: |
+          ./clone-kernel.sh
+          cd kernel_xiaomi_odin
+          git checkout "${{ inputs.root_manager }}"
+          git submodule update --init --recursive
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-odin-${{ inputs.root_manager }}-${{ github.run_number }}
+          restore-keys: |
+            ccache-odin-${{ inputs.root_manager }}-
+            ccache-odin-
+
+      - name: Build kernel
+        run: ./build.sh "${{ inputs.root_manager }}"
+
+      - name: ccache stats (host side)
+        if: always()
+        run: |
+          du -sh .ccache 2>/dev/null || echo "no ccache dir"
+
+      - name: List generated ZIP files
+        run: find out -name "*.zip" -type f -print || true
+
+      - name: Upload kernel ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Odin-Kernel-${{ inputs.root_manager }}-${{ github.run_number }}
+          path: out/*.zip
+          if-no-files-found: error
+          retention-days: 7
