@@ -33,9 +33,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     zstd \
     git \
+    curl \
+    ca-certificates \
     # Needed by some kernel scripts
     perl \
     && rm -rf /var/lib/apt/lists/*
+
+RUN git config --system --add safe.directory '*'
 
 # Create version-neutral symlinks so LLVM=1 finds unversioned tool names.
 # The kernel Makefile with LLVM=1 looks for: clang, ld.lld, llvm-ar, etc.
