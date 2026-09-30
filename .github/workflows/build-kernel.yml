@@ -55,10 +55,17 @@ jobs:
       - name: Build kernel
         run: ./build.sh "${{ inputs.root_manager }}"
 
+      - name: Detect artifact name
+        id: artifact
+        run: |
+          ZIP_BASENAME=$(basename "$(ls out/*.zip | head -n1)")
+          echo "name=${ZIP_BASENAME%.zip}" >> "$GITHUB_OUTPUT"
+
       - name: Upload kernel ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: Odin-Kernel-${{ inputs.root_manager }}-${{ github.run_number }}
+          name: ${{ steps.artifact.outputs.name }}
           path: out/*.zip
           if-no-files-found: error
           retention-days: 7
+          compression-level: 0
