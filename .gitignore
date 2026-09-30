@@ -15,7 +15,7 @@ AnyKernel/dtbo.img
 clang-r574158/
 firmware/
 reference/
-tools/
+#tools/
 
 # OS / macOS
 .DS_Store
