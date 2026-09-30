@@ -13,6 +13,8 @@ KERNEL_SRC="${KERNEL_SRC:-${SCRIPT_DIR}/kernel_xiaomi_odin}"
 # Repo URL: first argument, or KERNEL_REPO env, or default NOXCIS repo
 DEFAULT_REPO="https://github.com/NOXCIS/kernel_xiaomi_odin.git"
 KERNEL_REPO="${1:-${KERNEL_REPO:-${DEFAULT_REPO}}}"
+BRANCH="${2:-${KERNEL_BRANCH:-}}"
+DEPTH="${CLONE_DEPTH:-1}"
 
 if [ -d "${KERNEL_SRC}/.git" ]; then
     echo ">>> Kernel tree already exists at ${KERNEL_SRC}"
@@ -24,10 +26,17 @@ if [ -d "${KERNEL_SRC}/.git" ]; then
 fi
 
 if [ -e "${KERNEL_SRC}" ]; then
-    echo "ERROR: ${KERNEL_SRC} exists but is not a git repo. Remove or rename it first." >&2
+    echo "ERROR: ${KERNEL_SRC} exists but is not a git repo." >&2
     exit 1
 fi
 
-echo ">>> Cloning kernel repo into ${KERNEL_SRC}"
-git clone "${KERNEL_REPO}" "${KERNEL_SRC}"
+echo ">>> Shallow cloning ${KERNEL_REPO} (depth=${DEPTH}, branch=${BRANCH:-default})"
+if [ -n "${BRANCH}" ]; then
+    git clone --depth="${DEPTH}" --single-branch --branch "${BRANCH}" \
+        --no-tags --filter=blob:none "${KERNEL_REPO}" "${KERNEL_SRC}"
+else
+    git clone --depth="${DEPTH}" --single-branch --no-tags \
+        --filter=blob:none "${KERNEL_REPO}" "${KERNEL_SRC}"
+fi
+
 echo ">>> Done. Run ./build.sh to build."
