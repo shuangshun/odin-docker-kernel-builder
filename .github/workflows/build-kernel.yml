@@ -40,17 +40,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ccache-odin-${{ inputs.root_manager }}-${{ github.run_number }}
+          key: ccache-odin-${{ inputs.root_manager }}-${{ hashFiles('build.sh', 'clone-kernel.sh') }}
           restore-keys: |
             ccache-odin-${{ inputs.root_manager }}-
 
       - name: Clone kernel source
         run: |
           chmod +x build.sh clone-kernel.sh
-          ./clone-kernel.sh
-          cd kernel_xiaomi_odin
-          git checkout "${{ inputs.root_manager }}"
-          git submodule update --init --recursive
+          ./clone-kernel.sh \
+            https://github.com/NOXCIS/kernel_xiaomi_odin.git \
+            "${{ inputs.root_manager }}" \
+            yes
 
       - name: Build kernel
         run: ./build.sh "${{ inputs.root_manager }}"
