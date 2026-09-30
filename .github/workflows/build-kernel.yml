@@ -55,10 +55,14 @@ jobs:
       - name: Build kernel
         run: ./build.sh "${{ inputs.root_manager }}"
 
+      - name: Detect build hash
+        id: meta
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Upload kernel ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: Odin-Kernel-${{ inputs.root_manager }}-${{ github.run_number }}
+          name: Odin-Kernel-${{ inputs.root_manager }}-${{ steps.meta.outputs.sha }}
           path: out/*.zip
           if-no-files-found: error
           retention-days: 7
