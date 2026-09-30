@@ -26,6 +26,8 @@ BRANCH="${BRANCH:-ksu-next-susfs}"
 # Override: KSU_VERSION_OVERRIDE=2967 ./build.sh ksu-next-susfs
 KSU_VERSION_OVERRIDE="${KSU_VERSION_OVERRIDE:-auto}"
 
+CCACHE_HOST_DIR="${CCACHE_HOST_DIR:-${SCRIPT_DIR}/.ccache}"
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 log()  { printf '\n\033[1;36m>>> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33mWARN: %s\033[0m\n' "$*"; }
@@ -168,13 +170,31 @@ run_docker() {
     [ -n "${DEFCONFIG:-}" ] && defconfig_env="-e DEFCONFIG=${DEFCONFIG}"
     local tty_flag=""
     [ "${action}" = "menuconfig" ] && tty_flag="-it"
+    
+    mkdir -p "${CCACHE_HOST_DIR}"
+    
+    local ccache_args=()
+    for var in CCACHE_DIR CCACHE_MAXSIZE CCACHE_COMPRESS \
+               CCACHE_COMPRESSLEVEL CCACHE_SLOPPINESS CCACHE_BASEDIR; do
+        if [ -n "${!var:-}" ]; then
+            ccache_args+=("-e" "${var}=${!var}")
+        fi
+    done
+    
+    local user_flag=""
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        user_flag="--user $(id -u):$(id -g)"
+        ccache_args+=("-e" "HOME=/tmp")
+    fi
 
     log "Running: docker-build.sh ${action}"
     docker run --rm ${tty_flag} \
         --platform linux/arm64 \
         ${ksu_env} ${defconfig_env} \
+        "${ccache_args[@]}" \
         -v "${KERNEL_SRC}:/src:ro" \
         -v "${DOCKER_VOLUME}:/out" \
+        -v "${CCACHE_HOST_DIR}:/ccache" \
         -v "${DOCKER_BUILDSH}:/docker-build.sh:ro" \
         --entrypoint /bin/bash \
         "${DOCKER_IMAGE}" \

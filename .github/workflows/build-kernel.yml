@@ -22,6 +22,12 @@ jobs:
 
     env:
       DOCKER_BUILDKIT: 1
+      CCACHE_DIR: /ccache
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPRESS: "true"
+      CCACHE_COMPRESSLEVEL: "6"
+      CCACHE_SLOPPINESS: "time_macros,include_file_ctime,include_file_mtime"
+      CCACHE_BASEDIR: /src
 
     steps:
       - name: Checkout builder repository
@@ -30,12 +36,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Make build scripts executable
-        run: |
-          chmod +x build.sh clone-kernel.sh
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-odin-${{ inputs.root_manager }}-${{ github.run_number }}
+          restore-keys: |
+            ccache-odin-${{ inputs.root_manager }}-
 
       - name: Clone kernel source
         run: |
+          chmod +x build.sh clone-kernel.sh
           ./clone-kernel.sh
           cd kernel_xiaomi_odin
           git checkout "${{ inputs.root_manager }}"

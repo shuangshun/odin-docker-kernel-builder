@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     # Needed by some kernel scripts
     perl \
+    ccache \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git config --system --add safe.directory '*'
