@@ -39,22 +39,26 @@ update_submodules() {
         return 0
     fi
     echo ">>> Updating submodules (depth=${SUB_DEPTH})"
-    git submodule update --init --recursive \
-        --depth="${SUB_DEPTH}" --recommend-shallow
+    git submodule update --init --recursive --depth="${SUB_DEPTH}"
 }
 
 if [ -d "${KERNEL_SRC}/.git" ]; then
     echo ">>> Kernel tree already exists at ${KERNEL_SRC}"
     cd "${KERNEL_SRC}"
 
-    current_branch="${BRANCH:-$(git symbolic-ref --short -q HEAD || true)}"
-
-    if [ -z "${current_branch}" ]; then
-        echo ">>> Detached HEAD and no branch specified, skipping pull."
+    if [ -n "${BRANCH}" ]; then
+        echo ">>> Fetching origin/${BRANCH} (depth=${DEPTH})"
+        git fetch --depth="${DEPTH}" origin "${BRANCH}"
+        git checkout -B "${BRANCH}" FETCH_HEAD
     else
-        echo ">>> Fetching origin/${current_branch} (depth=${DEPTH})"
-        git fetch --depth="${DEPTH}" origin "${current_branch}"
-        git reset --hard FETCH_HEAD
+        current_branch="$(git symbolic-ref --short -q HEAD || true)"
+        if [ -z "${current_branch}" ]; then
+            echo ">>> Detached HEAD and no branch specified, skipping pull."
+        else
+            echo ">>> Fetching origin/${current_branch} (depth=${DEPTH})"
+            git fetch --depth="${DEPTH}" origin "${current_branch}"
+            git reset --hard FETCH_HEAD
+        fi
     fi
 
     update_submodules
@@ -69,10 +73,10 @@ fi
 
 echo ">>> Shallow cloning ${KERNEL_REPO} (depth=${DEPTH}, branch=${BRANCH:-default})"
 if [ -n "${BRANCH}" ]; then
-    git clone --depth="${DEPTH}" --single-branch --no-tags \
+    git clone --depth="${DEPTH}" --single-branch \
         --branch "${BRANCH}" "${KERNEL_REPO}" "${KERNEL_SRC}"
 else
-    git clone --depth="${DEPTH}" --single-branch --no-tags \
+    git clone --depth="${DEPTH}" --single-branch \
         "${KERNEL_REPO}" "${KERNEL_SRC}"
 fi
 

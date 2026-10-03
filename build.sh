@@ -56,7 +56,9 @@ switch_branch() {
             log "Kernel tree already on branch: ${kernel_branch}"
         else
             log "Switching kernel tree to branch: ${kernel_branch}"
-            (cd "${KERNEL_SRC}" && git checkout "${kernel_branch}" 2>&1) || \
+            (cd "${KERNEL_SRC}" \
+                && git fetch --depth=1 origin "${kernel_branch}" 2>&1 \
+                && git checkout -B "${kernel_branch}" FETCH_HEAD) || \
                 die "Failed to switch kernel tree to ${kernel_branch}"
         fi
     fi
@@ -72,9 +74,13 @@ switch_branch() {
                 log "KernelSU-Next already on branch: ${ksu_branch}"
             else
                 log "Switching KernelSU-Next to branch: ${ksu_branch}"
-                (cd "${ksu_dir}" && git checkout "${ksu_branch}" 2>&1) || \
+                (cd "${ksu_dir}" \
+                    && git fetch --depth=1 origin "${ksu_branch}" 2>&1 \
+                    && git checkout -B "${ksu_branch}" FETCH_HEAD) || \
                     die "Failed to switch to branch ${ksu_branch}"
             fi
+        else
+            warn "KernelSU-Next submodule not found at ${ksu_dir}; skipping"
         fi
     fi
 }
@@ -85,6 +91,7 @@ resolve_ksu_version() {
 
     local ksu_dir="${KERNEL_SRC}/KernelSU-Next"
     if [ -d "${ksu_dir}/.git" ] || [ -f "${ksu_dir}/.git" ]; then
+        (cd "${ksu_dir}" && git fetch --tags --depth=1 origin 2>/dev/null || true)
         KSU_TAG=$(cd "${ksu_dir}" && git describe --tags --abbrev=0 2>/dev/null || echo "")
     fi
 
@@ -114,10 +121,10 @@ resolve_ksu_version() {
 # ── Ensure source tree is clean for out-of-tree builds ───────────────────
 ensure_clean_source() {
     local dirty=0
-    [ -f "${KERNEL_SRC}/.config" ]                          && dirty=1
-    [ -d "${KERNEL_SRC}/include/config" ]                   && dirty=1
-    [ -d "${KERNEL_SRC}/include/generated" ]                && dirty=1
-    [ -d "${KERNEL_SRC}/arch/arm64/include/generated" ]     && dirty=1
+    [ -f "${KERNEL_SRC}/.config" ]                      && dirty=1
+    [ -d "${KERNEL_SRC}/include/config" ]               && dirty=1
+    [ -d "${KERNEL_SRC}/include/generated" ]            && dirty=1
+    [ -d "${KERNEL_SRC}/arch/arm64/include/generated" ] && dirty=1
 
     if [ "${dirty}" -eq 1 ]; then
         log "Cleaning leftover build artifacts from source tree"
@@ -130,15 +137,11 @@ ensure_clean_source() {
         rm -f  "${KERNEL_SRC}/System.map"
         rm -f  "${KERNEL_SRC}/vmlinux"
         rm -f  "${KERNEL_SRC}/vmlinux.o"
-        find "${KERNEL_SRC}" -name '*.o' -o -name '.*.cmd' -o -name '*.ko' \
-            -o -name '*.mod' -o -name '*.mod.c' 2>/dev/null | head -5 | while read -r f; do
-            log "Found stale object files — running cleanup"
-            find "${KERNEL_SRC}" \( -name '*.o' -o -name '.*.cmd' -o -name '*.ko' \
-                -o -name '*.mod' -o -name '*.mod.c' -o -name '.*.d' \
-                -o -name '*.order' -o -name 'modules.builtin' \
-                -o -name '.tmp_*' \) -delete 2>/dev/null || true
-            break
-        done
+        find "${KERNEL_SRC}" \
+            \( -name '*.o' -o -name '.*.cmd' -o -name '*.ko' \
+               -o -name '*.mod' -o -name '*.mod.c' -o -name '.*.d' \
+               -o -name '*.order' -o -name 'modules.builtin' \
+               -o -name '.tmp_*' \) -delete 2>/dev/null || true
         log "Source tree cleaned"
     fi
 }
@@ -170,9 +173,9 @@ run_docker() {
     [ -n "${DEFCONFIG:-}" ] && defconfig_env="-e DEFCONFIG=${DEFCONFIG}"
     local tty_flag=""
     [ "${action}" = "menuconfig" ] && tty_flag="-it"
-    
+
     mkdir -p "${CCACHE_HOST_DIR}"
-    
+
     local ccache_args=()
     for var in CCACHE_DIR CCACHE_MAXSIZE CCACHE_COMPRESS \
                CCACHE_COMPRESSLEVEL CCACHE_SLOPPINESS CCACHE_BASEDIR; do
@@ -180,7 +183,7 @@ run_docker() {
             ccache_args+=("-e" "${var}=${!var}")
         fi
     done
-    
+
     local user_flag=""
     if [ -n "${GITHUB_ACTIONS:-}" ]; then
         user_flag="--user $(id -u):$(id -g)"
