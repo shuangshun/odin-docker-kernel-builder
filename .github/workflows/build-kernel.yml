@@ -3,11 +3,13 @@ name: Build Odin Kernel
 on:
   workflow_dispatch:
     inputs:
-      kernel_src :
+      kernel_src:
+        description: 'Kernel source repository URL'
         required: true
         default: 'https://github.com/NOXCIS/kernel_xiaomi_odin'
         type: string
       branch:
+        description: 'Kernel branch or tag'
         required: true
         default: 'sukisu-4.1.1'
         type: string
@@ -32,6 +34,8 @@ jobs:
       CCACHE_COMPRESSLEVEL: "6"
       CCACHE_SLOPPINESS: "time_macros,include_file_ctime,include_file_mtime"
       CCACHE_BASEDIR: /src
+      KERNEL_SRC_INPUT: ${{ inputs.kernel_src || 'https://github.com/NOXCIS/kernel_xiaomi_odin' }}
+      KERNEL_BRANCH_INPUT: ${{ inputs.branch || 'sukisu-4.1.1' }}
 
     steps:
       - name: Checkout builder repository
@@ -44,30 +48,30 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: ccache-odin-${{ inputs.branch }}-${{ hashFiles('build.sh', 'clone-kernel.sh') }}
+          key: ccache-odin-${{ env.KERNEL_BRANCH_INPUT }}-${{ hashFiles('build.sh', 'clone-kernel.sh') }}
           restore-keys: |
-            ccache-odin-${{ inputs.branch }}-
+            ccache-odin-${{ env.KERNEL_BRANCH_INPUT }}-
 
       - name: Clone kernel source
         run: |
           chmod +x build.sh clone-kernel.sh
           ./clone-kernel.sh \
-            ${{ inputs.kernel_src || 'https://github.com/NOXCIS/kernel_xiaomi_odin' }} \
-            ${{ inputs.branch || 'sukisu-4.1.1' }} \
+            "${KERNEL_SRC_INPUT}" \
+            "${KERNEL_BRANCH_INPUT}" \
             yes
 
       - name: Build kernel
-        run: ./build.sh "${{ inputs.branch }}"
+        run: ./build.sh "${KERNEL_BRANCH_INPUT}"
 
       - name: Sanitize branch name
         id: sanitize
         run: |
-          safe_branch="$(printf '%s' "${{ inputs.branch }}" | sed 's|[/ ]|-|g; s|[^A-Za-z0-9._-]||g')"
+          safe_branch="$(printf '%s' "${KERNEL_BRANCH_INPUT}" | sed 's|[/ ]|-|g; s|[^A-Za-z0-9._-]||g')"
           if [ -z "${safe_branch}" ]; then
             safe_branch="unknown"
           fi
           echo "safe_branch=${safe_branch}" >> "$GITHUB_OUTPUT"
-          
+
       - name: Detect build hash
         id: meta
         run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"

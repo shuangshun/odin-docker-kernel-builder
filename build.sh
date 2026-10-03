@@ -247,8 +247,14 @@ package_zip() {
         zip_name="Odin_${KVER}_KSU_NXT_SUSFS${tag_part}_${DATE_TAG}.zip"
         build_label="KSU-Next SUSFS"
     else
-        zip_name="Odin_${KVER}_SukiSU_4.1.1_${DATE_TAG}.zip"
-        build_label="SukiSU 4.1.1"
+        local suki_ver
+        if [ "${BRANCH}" = "sukisu" ]; then
+            suki_ver="latest"
+        else
+            suki_ver="${BRANCH#sukisu-}"
+        fi
+        zip_name="Odin_${KVER}_SukiSU_${suki_ver}_${DATE_TAG}.zip"
+        build_label="SukiSU ${suki_ver}"
     fi
 
     mkdir -p "${OUT_DIR}"
@@ -381,7 +387,8 @@ is_command() {
 normalize_branch() {
     case "$1" in
         ksu-next-susfs|susfs) echo "ksu-next-susfs" ;;
-        sukisu-4.1.1|sukisu)  echo "sukisu-4.1.1" ;;
+        sukisu)               echo "sukisu" ;;
+        sukisu-*)             echo "$1" ;;
         *) echo "" ;;
     esac
 }
