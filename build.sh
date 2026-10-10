@@ -247,14 +247,11 @@ package_zip() {
         zip_name="Odin_${KVER}_KSU_NXT_SUSFS${tag_part}_${DATE_TAG}.zip"
         build_label="KSU-Next SUSFS"
     else
-        local suki_ver
-        if [ "${BRANCH}" = "sukisu" ]; then
-            suki_ver="latest"
-        else
-            suki_ver="${BRANCH#sukisu-}"
-        fi
-        zip_name="Odin_${KVER}_SukiSU_${suki_ver}_${DATE_TAG}.zip"
-        build_label="SukiSU ${suki_ver}"
+        local safe_branch
+        safe_branch="$(printf '%s' "${BRANCH}" | sed 's|[/ ]|-|g; s|[^A-Za-z0-9._-]||g')"
+        [ -z "${safe_branch}" ] && safe_branch="unknown"
+        zip_name="Odin_${KVER}_${safe_branch}_${DATE_TAG}.zip"
+        build_label="${BRANCH}"
     fi
 
     mkdir -p "${OUT_DIR}"
@@ -386,10 +383,9 @@ is_command() {
 
 normalize_branch() {
     case "$1" in
-        ksu-next-susfs|susfs) echo "ksu-next-susfs" ;;
+        ksu-next-susfs)       echo "ksu-next-susfs" ;;
         sukisu)               echo "sukisu" ;;
-        sukisu-*)             echo "$1" ;;
-        *) echo "" ;;
+        *)                    echo "$1" ;;
     esac
 }
 
@@ -402,7 +398,7 @@ elif is_command "${ARG1}"; then
 else
     BRANCH=$(normalize_branch "${ARG1}")
     if [ -z "${BRANCH}" ]; then
-        die "Unknown branch: ${ARG1} (use ksu-next-susfs, sukisu-4.1.1, susfs, or sukisu)"
+        die "Unknown branch: ${ARG1}"
     fi
     if [ -z "${ARG2}" ]; then
         ACTION="build"

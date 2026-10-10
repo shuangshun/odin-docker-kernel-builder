@@ -33,6 +33,20 @@ case "${SUB_FLAG}" in
         ;;
 esac
 
+validate_branch() {
+    [ -z "${BRANCH}" ] && return 0
+
+    echo ">>> Validating branch '${BRANCH}' exists in ${KERNEL_REPO}"
+    if ! git ls-remote --exit-code \
+            "${KERNEL_REPO}" \
+            "refs/heads/${BRANCH}" \
+            "refs/tags/${BRANCH}" > /dev/null 2>&1; then
+        echo "ERROR: Branch or tag '${BRANCH}' not found in ${KERNEL_REPO}" >&2
+        exit 1
+    fi
+    echo "[-] Branch OK."
+}
+
 update_submodules() {
     if [ "${PULL_SUBMODULES}" -ne 1 ]; then
         echo ">>> Skipping submodules (CLONE_SUBMODULES=${SUB_FLAG})"
@@ -65,6 +79,8 @@ if [ -d "${KERNEL_SRC}/.git" ]; then
     echo ">>> Done."
     exit 0
 fi
+
+validate_branch
 
 if [ -e "${KERNEL_SRC}" ]; then
     echo "ERROR: ${KERNEL_SRC} exists but is not a git repo. Remove it first." >&2
