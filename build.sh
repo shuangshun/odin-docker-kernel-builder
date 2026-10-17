@@ -26,6 +26,8 @@ BRANCH="${BRANCH:-ksu-next-susfs}"
 # Override: KSU_VERSION_OVERRIDE=2967 ./build.sh ksu-next-susfs
 KSU_VERSION_OVERRIDE="${KSU_VERSION_OVERRIDE:-auto}"
 
+CCACHE_HOST_DIR="${CCACHE_HOST_DIR:-${SCRIPT_DIR}/.ccache}"
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 log()  { printf '\n\033[1;36m>>> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33mWARN: %s\033[0m\n' "$*"; }
@@ -54,7 +56,9 @@ switch_branch() {
             log "Kernel tree already on branch: ${kernel_branch}"
         else
             log "Switching kernel tree to branch: ${kernel_branch}"
-            (cd "${KERNEL_SRC}" && git checkout "${kernel_branch}" 2>&1) || \
+            (cd "${KERNEL_SRC}" \
+                && git fetch --depth=1 origin "${kernel_branch}" 2>&1 \
+                && git checkout -B "${kernel_branch}" FETCH_HEAD) || \
                 die "Failed to switch kernel tree to ${kernel_branch}"
         fi
     fi
@@ -70,9 +74,13 @@ switch_branch() {
                 log "KernelSU-Next already on branch: ${ksu_branch}"
             else
                 log "Switching KernelSU-Next to branch: ${ksu_branch}"
-                (cd "${ksu_dir}" && git checkout "${ksu_branch}" 2>&1) || \
+                (cd "${ksu_dir}" \
+                    && git fetch --depth=1 origin "${ksu_branch}" 2>&1 \
+                    && git checkout -B "${ksu_branch}" FETCH_HEAD) || \
                     die "Failed to switch to branch ${ksu_branch}"
             fi
+        else
+            warn "KernelSU-Next submodule not found at ${ksu_dir}; skipping"
         fi
     fi
 }
@@ -83,6 +91,7 @@ resolve_ksu_version() {
 
     local ksu_dir="${KERNEL_SRC}/KernelSU-Next"
     if [ -d "${ksu_dir}/.git" ] || [ -f "${ksu_dir}/.git" ]; then
+        (cd "${ksu_dir}" && git fetch --tags --depth=1 origin 2>/dev/null || true)
         KSU_TAG=$(cd "${ksu_dir}" && git describe --tags --abbrev=0 2>/dev/null || echo "")
     fi
 
@@ -112,10 +121,10 @@ resolve_ksu_version() {
 # ── Ensure source tree is clean for out-of-tree builds ───────────────────
 ensure_clean_source() {
     local dirty=0
-    [ -f "${KERNEL_SRC}/.config" ]                          && dirty=1
-    [ -d "${KERNEL_SRC}/include/config" ]                   && dirty=1
-    [ -d "${KERNEL_SRC}/include/generated" ]                && dirty=1
-    [ -d "${KERNEL_SRC}/arch/arm64/include/generated" ]     && dirty=1
+    [ -f "${KERNEL_SRC}/.config" ]                      && dirty=1
+    [ -d "${KERNEL_SRC}/include/config" ]               && dirty=1
+    [ -d "${KERNEL_SRC}/include/generated" ]            && dirty=1
+    [ -d "${KERNEL_SRC}/arch/arm64/include/generated" ] && dirty=1
 
     if [ "${dirty}" -eq 1 ]; then
         log "Cleaning leftover build artifacts from source tree"
@@ -128,15 +137,11 @@ ensure_clean_source() {
         rm -f  "${KERNEL_SRC}/System.map"
         rm -f  "${KERNEL_SRC}/vmlinux"
         rm -f  "${KERNEL_SRC}/vmlinux.o"
-        find "${KERNEL_SRC}" -name '*.o' -o -name '.*.cmd' -o -name '*.ko' \
-            -o -name '*.mod' -o -name '*.mod.c' 2>/dev/null | head -5 | while read -r f; do
-            log "Found stale object files — running cleanup"
-            find "${KERNEL_SRC}" \( -name '*.o' -o -name '.*.cmd' -o -name '*.ko' \
-                -o -name '*.mod' -o -name '*.mod.c' -o -name '.*.d' \
-                -o -name '*.order' -o -name 'modules.builtin' \
-                -o -name '.tmp_*' \) -delete 2>/dev/null || true
-            break
-        done
+        find "${KERNEL_SRC}" \
+            \( -name '*.o' -o -name '.*.cmd' -o -name '*.ko' \
+               -o -name '*.mod' -o -name '*.mod.c' -o -name '.*.d' \
+               -o -name '*.order' -o -name 'modules.builtin' \
+               -o -name '.tmp_*' \) -delete 2>/dev/null || true
         log "Source tree cleaned"
     fi
 }
@@ -169,12 +174,30 @@ run_docker() {
     local tty_flag=""
     [ "${action}" = "menuconfig" ] && tty_flag="-it"
 
+    mkdir -p "${CCACHE_HOST_DIR}"
+
+    local ccache_args=()
+    for var in CCACHE_DIR CCACHE_MAXSIZE CCACHE_COMPRESS \
+               CCACHE_COMPRESSLEVEL CCACHE_SLOPPINESS CCACHE_BASEDIR; do
+        if [ -n "${!var:-}" ]; then
+            ccache_args+=("-e" "${var}=${!var}")
+        fi
+    done
+
+    local user_flag=""
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        user_flag="--user $(id -u):$(id -g)"
+        ccache_args+=("-e" "HOME=/tmp")
+    fi
+
     log "Running: docker-build.sh ${action}"
     docker run --rm ${tty_flag} \
         --platform linux/arm64 \
         ${ksu_env} ${defconfig_env} \
+        "${ccache_args[@]}" \
         -v "${KERNEL_SRC}:/src:ro" \
         -v "${DOCKER_VOLUME}:/out" \
+        -v "${CCACHE_HOST_DIR}:/ccache" \
         -v "${DOCKER_BUILDSH}:/docker-build.sh:ro" \
         --entrypoint /bin/bash \
         "${DOCKER_IMAGE}" \
@@ -224,8 +247,11 @@ package_zip() {
         zip_name="Odin_${KVER}_KSU_NXT_SUSFS${tag_part}_${DATE_TAG}.zip"
         build_label="KSU-Next SUSFS"
     else
-        zip_name="Odin_${KVER}_SukiSU_4.1.1_${DATE_TAG}.zip"
-        build_label="SukiSU 4.1.1"
+        local safe_branch
+        safe_branch="$(printf '%s' "${BRANCH}" | sed 's|[/ ]|-|g; s|[^A-Za-z0-9._-]||g')"
+        [ -z "${safe_branch}" ] && safe_branch="unknown"
+        zip_name="Odin_${KVER}_${safe_branch}_${DATE_TAG}.zip"
+        build_label="${BRANCH}"
     fi
 
     mkdir -p "${OUT_DIR}"
@@ -357,9 +383,9 @@ is_command() {
 
 normalize_branch() {
     case "$1" in
-        ksu-next-susfs|susfs) echo "ksu-next-susfs" ;;
-        sukisu-4.1.1|sukisu)  echo "sukisu-4.1.1" ;;
-        *) echo "" ;;
+        ksu-next-susfs)       echo "ksu-next-susfs" ;;
+        sukisu)               echo "sukisu" ;;
+        *)                    echo "$1" ;;
     esac
 }
 
@@ -372,7 +398,7 @@ elif is_command "${ARG1}"; then
 else
     BRANCH=$(normalize_branch "${ARG1}")
     if [ -z "${BRANCH}" ]; then
-        die "Unknown branch: ${ARG1} (use ksu-next-susfs, sukisu-4.1.1, susfs, or sukisu)"
+        die "Unknown branch: ${ARG1}"
     fi
     if [ -z "${ARG2}" ]; then
         ACTION="build"

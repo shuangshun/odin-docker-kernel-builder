@@ -5,6 +5,7 @@ kernel_xiaomi_odin/
 out/
 logs/
 build/
+.ccache/
 
 # AnyKernel build outputs (filled by ./build.sh)
 AnyKernel/Image

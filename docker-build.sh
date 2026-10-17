@@ -20,6 +20,16 @@ export CLANG_TRIPLE=aarch64-linux-gnu-
 export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-noxcis}"
 export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-docker}"
 
+# ── ccache ───────────────────────────────────────────────────────────────
+export CCACHE_DIR="${CCACHE_DIR:-/ccache}"
+export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-2G}"
+export CCACHE_COMPRESS="${CCACHE_COMPRESS:-true}"
+export CCACHE_COMPRESSLEVEL="${CCACHE_COMPRESSLEVEL:-6}"
+export CCACHE_SLOPPINESS="${CCACHE_SLOPPINESS:-time_macros,include_file_ctime,include_file_mtime}"
+export CCACHE_BASEDIR="${CCACHE_BASEDIR:-${SRC_DIR}}"
+
+mkdir -p "${CCACHE_DIR}"
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 log() { printf '\n\033[1;36m>>> %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -92,9 +102,12 @@ do_build() {
 
     # Build target: skip 'usr' (UAPI header tests) for HYPER_OS due to broken headers
     if [ "${DEFCONFIG}" = "odin_qgki" ]; then
-        make -C "${SRC_DIR}" O="${OUT_DIR}" KCFLAGS="${KCFLAGS}" -j"${JOBS}" Image dtbs modules 2>&1
+        make -C "${SRC_DIR}" O="${OUT_DIR}" \
+            CC="ccache clang" KCFLAGS="${KCFLAGS}" -j"${JOBS}" \
+            Image dtbs modules 2>&1
     else
-        make -C "${SRC_DIR}" O="${OUT_DIR}" KCFLAGS="${KCFLAGS}" -j"${JOBS}" 2>&1
+        make -C "${SRC_DIR}" O="${OUT_DIR}" \
+            CC="ccache clang" KCFLAGS="${KCFLAGS}" -j"${JOBS}" 2>&1
     fi
 
     END=$(date +%s)
@@ -103,6 +116,10 @@ do_build() {
     SECONDS=$(( ELAPSED % 60 ))
 
     log "Build completed in ${MINUTES}m ${SECONDS}s"
+    if command -v ccache >/dev/null 2>&1; then
+        log "ccache statistics:"
+        ccache -s -v 2>/dev/null | grep -Ei 'cacheable|cache hit|cache miss|cache size|files in cache' || ccache -s
+    fi
 
     # ── Verify outputs ───────────────────────────────────────────────
     IMAGE="${OUT_DIR}/arch/arm64/boot/Image"
