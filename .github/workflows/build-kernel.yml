@@ -1,0 +1,86 @@
+name: Build Odin Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_src:
+        description: 'Kernel source repository URL'
+        required: true
+        default: 'https://github.com/NOXCIS/kernel_xiaomi_odin'
+        type: string
+      branch:
+        description: 'Kernel branch or tag'
+        required: true
+        default: 'sukisu-4.1.1'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.branch || 'sukisu-4.1.1' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+
+    env:
+      DOCKER_BUILDKIT: 1
+      CCACHE_DIR: /ccache
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPRESS: "true"
+      CCACHE_COMPRESSLEVEL: "6"
+      CCACHE_SLOPPINESS: "time_macros,include_file_ctime,include_file_mtime"
+      CCACHE_BASEDIR: /src
+      KERNEL_SRC_INPUT: ${{ inputs.kernel_src || 'https://github.com/NOXCIS/kernel_xiaomi_odin' }}
+      KERNEL_BRANCH_INPUT: ${{ inputs.branch || 'sukisu-4.1.1' }}
+
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-odin-${{ env.KERNEL_BRANCH_INPUT }}-${{ hashFiles('build.sh', 'clone-kernel.sh') }}
+          restore-keys: |
+            ccache-odin-${{ env.KERNEL_BRANCH_INPUT }}-
+
+      - name: Clone kernel source
+        run: |
+          chmod +x build.sh clone-kernel.sh
+          ./clone-kernel.sh \
+            "${KERNEL_SRC_INPUT}" \
+            "${KERNEL_BRANCH_INPUT}" \
+            yes
+
+      - name: Build kernel
+        run: ./build.sh "${KERNEL_BRANCH_INPUT}"
+
+      - name: Sanitize branch name
+        id: sanitize
+        run: |
+          safe_branch="$(printf '%s' "${KERNEL_BRANCH_INPUT}" | sed 's|[/ ]|-|g; s|[^A-Za-z0-9._-]||g')"
+          if [ -z "${safe_branch}" ]; then
+            safe_branch="unknown"
+          fi
+          echo "safe_branch=${safe_branch}" >> "$GITHUB_OUTPUT"
+
+      - name: Detect build hash
+        id: meta
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload kernel ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Odin-Kernel-${{ steps.sanitize.outputs.safe_branch }}-${{ steps.meta.outputs.sha }}
+          path: out/*.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
