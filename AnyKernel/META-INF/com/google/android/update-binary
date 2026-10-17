@@ -537,7 +537,7 @@ if [ $? != 0 -o -z "$(ls bin)" ]; then
   abort "Busybox setup failed. Aborting...";
 fi;
 OLD_PATH="$PATH";
-export PATH="$AKHOME/bin:$AKHOME/tools:$PATH";
+export PATH="$AKHOME/tools:$AKHOME/bin:$PATH";
 
 if [ -f banner ]; then
   ui_printfile banner;
@@ -545,7 +545,7 @@ if [ -f banner ]; then
 fi;
 
 KERNEL_STRING="$(file_getprop anykernel.sh kernel.string)";
-printf '%b' "$KERNEL_STRING" | while IFS= read -r line; do ui_print "$line"; done;
+ui_print "$KERNEL_STRING";
 if [ -f version ]; then
   ui_print " ";
   ui_printfile version;
@@ -563,9 +563,6 @@ do_levelcheck;
 do_vendorlevelcheck;
 
 ui_print "Installing...";
-# hack to maintain support for anykernel.sh files that weren't updated correctly along with the AK core
-CORE=$(grep -oE 'ak.*core.sh' anykernel.sh);
-[ -f tools/$CORE ] || ln -s $AKHOME/tools/ak*-core.sh $AKHOME/tools/$CORE;
 ash anykernel.sh;
 if [ $? != 0 ]; then
   abort;

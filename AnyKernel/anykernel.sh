@@ -4,7 +4,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=___  __________   __           ___ \n|  \/  |_   _\ \ / /          /   |\n| .  . | | |  \ V /          / /| |\n| |\/| | | |  /   \         / /_| |\n| |  | |_| |_/ /^\ \        \___  |\n\_|  |_/\___/\/   \/            |_/\n                            \n _____ _____ _____ _____ _____ __    \n|  |  |   __| __  |   | |   __|  |   \n|    -|   __|    -| | | |   __|  |__ \n|__|__|_____|__|__|_|___|_____|_____|\n\nCODENAME:ODIN \n__BUILD_LABEL__\nKernel Version: __KERNEL_VERSION__\nBuild: __BUILD_LABEL__\nBuild Date: __BUILD_DATE__\nCompiler: __COMPILER__\nBuilder: Noxcis @ Github/Gitlab 
+kernel.string=Kernels by Noxcis @ Github/Gitlab
 do.devicecheck=1
 do.modules=0
 do.systemless=1
@@ -24,15 +24,15 @@ supported.vendorpatchlevels=
 ### AnyKernel install
 ## boot files attributes
 boot_attributes() {
-set_perm_recursive 0 0 755 644 $ramdisk/*;
-set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
+set_perm_recursive 0 0 755 644 $RAMDISK/*;
+set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
 } # end attributes
 
 # boot shell variables
-block=boot;
-is_slot_device=1;
-ramdisk_compression=auto;
-patch_vbmeta_flag=auto;
+BLOCK=/dev/block/by-name/boot;
+IS_SLOT_DEVICE=1;
+RAMDISK_COMPRESSION=auto;
+PATCH_VBMETA_FLAG=auto;
 
 # import functions/variables and setup patching - see for reference (DO NOT REMOVE)
 . tools/ak3-core.sh;
@@ -62,15 +62,15 @@ write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_
 
 ## init_boot files attributes
 #init_boot_attributes() {
-#set_perm_recursive 0 0 755 644 $ramdisk/*;
-#set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
+#set_perm_recursive 0 0 755 644 $RAMDISK/*;
+#set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
 #} # end attributes
 
 # init_boot shell variables
-#block=init_boot;
-#is_slot_device=1;
-#ramdisk_compression=auto;
-#patch_vbmeta_flag=auto;
+#BLOCK=init_boot;
+#IS_SLOT_DEVICE=1;
+#RAMDISK_COMPRESSION=auto;
+#PATCH_VBMETA_FLAG=auto;
 
 # reset for init_boot patching
 #reset_ak;
@@ -83,10 +83,10 @@ write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_
 
 
 ## vendor_kernel_boot shell variables
-#block=vendor_kernel_boot;
-#is_slot_device=1;
-#ramdisk_compression=auto;
-#patch_vbmeta_flag=auto;
+#BLOCK=vendor_kernel_boot;
+#IS_SLOT_DEVICE=1;
+#RAMDISK_COMPRESSION=auto;
+#PATCH_VBMETA_FLAG=auto;
 
 # reset for vendor_kernel_boot patching
 #reset_ak;
@@ -100,15 +100,15 @@ write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_
 
 ## vendor_boot files attributes
 #vendor_boot_attributes() {
-#set_perm_recursive 0 0 755 644 $ramdisk/*;
-#set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
+#set_perm_recursive 0 0 755 644 $RAMDISK/*;
+#set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
 #} # end attributes
 
 # vendor_boot shell variables
-#block=vendor_boot;
-#is_slot_device=1;
-#ramdisk_compression=auto;
-#patch_vbmeta_flag=auto;
+#BLOCK=vendor_boot;
+#IS_SLOT_DEVICE=1;
+#RAMDISK_COMPRESSION=auto;
+#PATCH_VBMETA_FLAG=auto;
 
 # reset for vendor_boot patching
 #reset_ak;
