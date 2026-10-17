@@ -9,8 +9,6 @@
 # Env:
 #   KERNEL_REPO        override repo URL
 #   KERNEL_BRANCH      override branch/tag
-#   CLONE_DEPTH        clone depth (default 1)
-#   SUBMODULE_DEPTH    submodule depth (default 1)
 #   CLONE_SUBMODULES   yes|no — whether to init submodules (default yes)
 set -euo pipefail
 
@@ -21,7 +19,6 @@ DEFAULT_REPO="https://github.com/NOXCIS/kernel_xiaomi_odin.git"
 KERNEL_REPO="${1:-${KERNEL_REPO:-${DEFAULT_REPO}}}"
 BRANCH="${2:-${KERNEL_BRANCH:-}}"
 DEPTH="${CLONE_DEPTH:-1}"
-SUB_DEPTH="${SUBMODULE_DEPTH:-1}"
 
 SUB_FLAG="${3:-${CLONE_SUBMODULES:-yes}}"
 case "${SUB_FLAG}" in
@@ -52,8 +49,8 @@ update_submodules() {
         echo ">>> Skipping submodules (CLONE_SUBMODULES=${SUB_FLAG})"
         return 0
     fi
-    echo ">>> Updating submodules (depth=${SUB_DEPTH})"
-    git submodule update --init --recursive --depth="${SUB_DEPTH}"
+    echo ">>> Updating submodules"
+    git submodule update --init --recursive
 }
 
 if [ -d "${KERNEL_SRC}/.git" ]; then
